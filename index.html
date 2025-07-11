@@ -1,0 +1,1150 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PlayGames - Lincoln Thomson</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .game-tile {
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .game-tile:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 15px rgba(59, 130, 246, 0.7);
+    }
+    #game-canvas {
+      animation: fadeIn 0.5s ease-in-out;
+    }
+    .header-gradient {
+      background: linear-gradient(to right, #3b82f6, #8b5cf6);
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-white font-sans">
+  <div class="container mx-auto p-4">
+    <h1 class="text-5xl font-extrabold text-center mb-8 header-gradient text-white py-4 rounded-lg shadow-lg">
+      Lincoln Thomson's PlayGames
+    </h1>
+    <div id="game-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mb-8">
+      <!-- Game tiles populated by JavaScript -->
+    </div>
+    <div id="game-container" class="flex justify-center">
+      <div id="game-canvas" class="hidden border-4 border-blue-500 bg-black rounded-lg shadow-lg"></div>
+      <div id="game-placeholder" class="text-center text-gray-400 text-xl">
+        Select a game to start playing!
+      </div>
+    </div>
+    <div id="game-instructions" class="text-center mt-4 text-gray-300 text-lg"></div>
+  </div>
+
+  <script>
+    // List of 25 classic games (9 implemented, 16 placeholders)
+    const games = [
+      { id: 'tetris', name: 'Tetris', implemented: true },
+      { id: 'snake', name: 'Snake', implemented: true },
+      { id: 'pong', name: 'Pong', implemented: true },
+      { id: 'breakout', name: 'Breakout', implemented: true },
+      { id: 'tictactoe', name: 'Tic-Tac-Toe', implemented: true },
+      { id: 'pacman', name: 'Pac-Man', implemented: true },
+      { id: 'space-invaders', name: 'Space Invaders', implemented: true },
+      { id: 'asteroids', name: 'Asteroids', implemented: true },
+      { id: 'galaga', name: 'Galaga', implemented: true },
+      { id: 'frogger', name: 'Frogger', implemented: false },
+      { id: 'centipede', name: 'Centipede', implemented: false },
+      { id: 'minesweeper', name: 'Minesweeper', implemented: false },
+      { id: 'connect4', name: 'Connect Four', implemented: false },
+      { id: 'battleship', name: 'Battleship', implemented: false },
+      { id: 'othello', name: 'Othello', implemented: false },
+      { id: 'checkers', name: 'Checkers', implemented: false },
+      { id: 'chess', name: 'Chess', implemented: false },
+      { id: 'solitaire', name: 'Solitaire', implemented: false },
+      { id: 'freecell', name: 'FreeCell', implemented: false },
+      { id: 'arkanoid', name: 'Arkanoid', implemented: false },
+      { id: 'digdug', name: 'Dig Dug', implemented: false },
+      { id: 'qbert', name: 'Q*bert', implemented: false },
+      { id: 'tetris-attack', name: 'Tetris Attack', implemented: false },
+      { id: 'bubble-bobble', name: 'Bubble Bobble', implemented: false },
+      { id: 'donkey-kong', name: 'Donkey Kong', implemented: false }
+    ];
+
+    // Game instructions
+    const instructions = {
+      tetris: 'Use LEFT/RIGHT to move, UP to rotate, DOWN to drop faster, SPACE to drop instantly. Press R to restart.',
+      snake: 'Use ARROW keys to move. Eat apples to grow, avoid walls and yourself. Press R to restart.',
+      pong: 'Use UP/DOWN to move left paddle. Player vs. AI, first to 5 wins. Press R to restart.',
+      breakout: 'Use LEFT/RIGHT to move paddle, bounce ball to break bricks. Press R to restart.',
+      tictactoe: 'Click a cell to place X. Play vs. AI (O). Get three in a row to win. Press R to restart.',
+      pacman: 'Use ARROW keys to move, eat dots, avoid ghosts. Press R to restart.',
+      'space-invaders': 'Use LEFT/RIGHT to move, SPACE to shoot, destroy aliens. Press R to restart.',
+      asteroids: 'Use LEFT/RIGHT to rotate, UP to thrust, SPACE to shoot, avoid asteroids. Press R to restart.',
+      galaga: 'Use LEFT/RIGHT to move, SPACE to shoot, destroy enemy waves. Press R to restart.',
+      default: 'This game is not yet implemented. Select another game.'
+    };
+
+    // Populate game grid
+    const gameGrid = document.getElementById('game-grid');
+    games.forEach(game => {
+      const tile = document.createElement('div');
+      tile.className = 'game-tile bg-blue-600 text-white p-4 rounded-lg text-center cursor-pointer hover:bg-blue-700 transition';
+      tile.textContent = game.name;
+      tile.dataset.gameId = game.id;
+      tile.addEventListener('click', () => loadGame(game.id));
+      gameGrid.appendChild(tile);
+    });
+
+    let currentSketch = null;
+
+    function loadGame(gameId) {
+      const gameCanvas = document.getElementById('game-canvas');
+      const gamePlaceholder = document.getElementById('game-placeholder');
+      const gameInstructions = document.getElementById('game-instructions');
+      gameCanvas.classList.remove('hidden');
+      gamePlaceholder.classList.add('hidden');
+      gameInstructions.textContent = instructions[gameId] || instructions.default;
+
+      if (currentSketch) {
+        currentSketch.remove();
+      }
+
+      if (gameId === 'tetris') {
+        currentSketch = new p5(sketchTetris, 'game-canvas');
+      } else if (gameId === 'snake') {
+        currentSketch = new p5(sketchSnake, 'game-canvas');
+      } else if (gameId === 'pong') {
+        currentSketch = new p5(sketchPong, 'game-canvas');
+      } else if (gameId === 'breakout') {
+        currentSketch = new p5(sketchBreakout, 'game-canvas');
+      } else if (gameId === 'tictactoe') {
+        currentSketch = new p5(sketchTicTacToe, 'game-canvas');
+      } else if (gameId === 'pacman') {
+        currentSketch = new p5(sketchPacMan, 'game-canvas');
+      } else if (gameId === 'space-invaders') {
+        currentSketch = new p5(sketchSpaceInvaders, 'game-canvas');
+      } else if (gameId === 'asteroids') {
+        currentSketch = new p5(sketchAsteroids, 'game-canvas');
+      } else if (gameId === 'galaga') {
+        currentSketch = new p5(sketchGalaga, 'game-canvas');
+      } else {
+        currentSketch = new p5(sketchPlaceholder, 'game-canvas');
+      }
+    }
+
+    // Tetris Game
+    const sketchTetris = (p) => {
+      let grid = [];
+      let currentPiece = null;
+      let score = 0;
+      let gameOver = false;
+      const gridWidth = 10;
+      const gridHeight = 20;
+      const blockSize = 30;
+      const shapes = [
+        [[1, 1, 1, 1]], // I
+        [[1, 1], [1, 1]], // O
+        [[0, 1, 0], [1, 1, 1]], // T
+        [[1, 1, 0], [0, 1, 1]], // S
+        [[0, 1, 1], [1, 1, 0]] // Z
+      ];
+
+      function resetGame() {
+        grid = Array(gridHeight).fill().map(() => Array(gridWidth).fill(0));
+        score = 0;
+        gameOver = false;
+        spawnPiece();
+      }
+
+      p.setup = () => {
+        p.createCanvas(gridWidth * blockSize, gridHeight * blockSize);
+        resetGame();
+      };
+
+      function spawnPiece() {
+        const shapesIdx = Math.floor(Math.random() * shapes.length);
+        currentPiece = {
+          shape: shapes[shapesIdx],
+          x: Math.floor(gridWidth / 2) - Math.floor(shapes[shapesIdx][0].length / 2),
+          y: 0
+        };
+        if (!canMove(currentPiece.shape, currentPiece.x, currentPiece.y)) {
+          gameOver = true;
+        }
+      }
+
+      p.draw = () => {
+        p.background(20, 20, 40);
+        p.stroke(100);
+        p.strokeWeight(1);
+        for (let y = 0; y < gridHeight; y++) {
+          for (let x = 0; x < gridWidth; x++) {
+            if (grid[y][x]) {
+              p.fill(59, 130, 246);
+              p.rect(x * blockSize, y * blockSize, blockSize, blockSize);
+            }
+          }
+        }
+        if (currentPiece && !gameOver) {
+          p.fill(236, 72, 153);
+          for (let y = 0; y < currentPiece.shape.length; y++) {
+            for (let x = 0; x < currentPiece.shape[y].length; x++) {
+              if (currentPiece.shape[y][x]) {
+                p.rect((currentPiece.x + x) * blockSize, (currentPiece.y + y) * blockSize, blockSize, blockSize);
+              }
+            }
+          }
+          if (p.frameCount % 30 === 0) {
+            movePieceDown();
+          }
+        }
+        p.fill(255);
+        p.textSize(20);
+        p.textFont('Arial');
+        p.text(`Score: ${score}`, 10, 30);
+        if (gameOver) {
+          p.textSize(40);
+          p.textAlign(p.CENTER);
+          p.text('Game Over\nPress R to Restart', p.width / 2, p.height / 2);
+        }
+      };
+
+      function movePieceDown() {
+        if (canMove(currentPiece.shape, currentPiece.x, currentPiece.y + 1)) {
+          currentPiece.y++;
+        } else {
+          placePiece();
+          clearLines();
+          spawnPiece();
+        }
+      }
+
+      function canMove(shape, x, y) {
+        for (let sy = 0; sy < shape.length; sy++) {
+          for (let sx = 0; sx < shape[sy].length; sx++) {
+            if (shape[sy][sx]) {
+              const newX = x + sx;
+              const newY = y + sy;
+              if (newX < 0 || newX >= gridWidth || newY >= gridHeight || (newY >= 0 && grid[newY][newX])) {
+                return false;
+              }
+            }
+          }
+        }
+        return true;
+      }
+
+      function placePiece() {
+        for (let y = 0; y < currentPiece.shape.length; y++) {
+          for (let x = 0; x < currentPiece.shape[y].length; x++) {
+            if (currentPiece.shape[y][x]) {
+              grid[currentPiece.y + y][currentPiece.x + x] = 1;
+            }
+          }
+        }
+      }
+
+      function clearLines() {
+        let linesCleared = 0;
+        for (let y = gridHeight - 1; y >= 0; y--) {
+          if (grid[y].every(cell => cell)) {
+            grid.splice(y, 1);
+            grid.unshift(Array(gridWidth).fill(0));
+            linesCleared++;
+            y++;
+          }
+        }
+        score += linesCleared * 100;
+      }
+
+      function rotatePiece() {
+        const newShape = Array(currentPiece.shape[0].length).fill().map(() => Array(currentPiece.shape.length).fill(0));
+        for (let y = 0; y < currentPiece.shape.length; y++) {
+          for (let x = 0; x < currentPiece.shape[y].length; x++) {
+            newShape[x][currentPiece.shape.length - 1 - y] = currentPiece.shape[y][x];
+          }
+        }
+        if (canMove(newShape, currentPiece.x, currentPiece.y)) {
+          currentPiece.shape = newShape;
+        }
+      }
+
+      p.keyPressed = () => {
+        if (gameOver && p.key === 'r') {
+          resetGame();
+        } else if (!gameOver) {
+          if (p.keyCode === p.LEFT_ARROW && canMove(currentPiece.shape, currentPiece.x - 1, currentPiece.y)) {
+            currentPiece.x--;
+          } else if (p.keyCode === p.RIGHT_ARROW && canMove(currentPiece.shape, currentPiece.x + 1, currentPiece.y)) {
+            currentPiece.x++;
+          } else if (p.keyCode === p.DOWN_ARROW) {
+            movePieceDown();
+          } else if (p.keyCode === p.UP_ARROW) {
+            rotatePiece();
+          } else if (p.keyCode === 32) { // Spacebar
+            while (canMove(currentPiece.shape, currentPiece.x, currentPiece.y + 1)) {
+              currentPiece.y++;
+            }
+            movePieceDown();
+          }
+        }
+      };
+    };
+
+    // Snake Game
+    const sketchSnake = (p) => {
+      let snake = [{ x: 10, y: 10 }];
+      let food = { x: 15, y: 15 };
+      let dir = { x: 1, y: 0 };
+      let gridSize = 20;
+      let tileSize = 20;
+      let score = 0;
+      let gameOver = false;
+
+      function resetGame() {
+        snake = [{ x: 10, y: 10 }];
+        dir = { x: 1, y: 0 };
+        score = 0;
+        gameOver = false;
+        spawnFood();
+      }
+
+      p.setup = () => {
+        p.createCanvas(gridSize * tileSize, gridSize * tileSize);
+        p.frameRate(10);
+        spawnFood();
+      };
+
+      function spawnFood() {
+        food = {
+          x: Math.floor(Math.random() * gridSize),
+          y: Math.floor(Math.random() * gridSize)
+        };
+      }
+
+      p.draw = () => {
+        p.background(20, 20, 40);
+        if (!gameOver) {
+          let head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+          if (head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize || snake.some(s => s.x === head.x && s.y === head.y)) {
+            gameOver = true;
+          } else {
+            snake.unshift(head);
+            if (head.x === food.x && head.y === food.y) {
+              score += 10;
+              spawnFood();
+            } else {
+              snake.pop();
+            }
+          }
+        }
+        p.fill(34, 197, 94);
+        snake.forEach(segment => {
+          p.rect(segment.x * tileSize, segment.y * tileSize, tileSize - 2, tileSize - 2, 5);
+        });
+        p.fill(239, 68, 68);
+        p.ellipse(food.x * tileSize + tileSize / 2, food.y * tileSize + tileSize / 2, tileSize - 5);
+        p.fill(255);
+        p.textSize(20);
+        p.textFont('Arial');
+        p.text(`Score: ${score}`, 10, 30);
+        if (gameOver) {
+          p.textSize(40);
+          p.textAlign(p.CENTER);
+          p.text('Game Over\nPress R to Restart', p.width / 2, p.height / 2);
+        }
+      };
+
+      p.keyPressed = () => {
+        if (gameOver && p.key === 'r') {
+          resetGame();
+        } else if (!gameOver) {
+          if (p.keyCode === p.UP_ARROW && dir.y === 0) {
+            dir = { x: 0, y: -1 };
+          } else if (p.keyCode === p.DOWN_ARROW && dir.y === 0) {
+            dir = { x: 0, y: 1 };
+          } else if (p.keyCode === p.LEFT_ARROW && dir.x === 0) {
+            dir = { x: -1, y: 0 };
+          } else if (p.keyCode === p.RIGHT_ARROW && dir.x === 0) {
+            dir = { x: 1, y: 0 };
+          }
+        }
+      };
+    };
+
+    // Pong Game
+    const sketchPong = (p) => {
+      let ball = { x: 200, y: 200, dx: 4, dy: 4 };
+      let paddleLeft = { y: 150, h: 100, w: 10 };
+      let paddleRight = { y: 150, h: 100, w: 10 };
+      let scoreLeft = 0;
+      let scoreRight = 0;
+      let gameOver = false;
+
+      function resetGame() {
+        ball = { x: 200, y: 200, dx: 4, dy: 4 };
+        paddleLeft = { y: 150, h: 100, w: 10 };
+        paddleRight = { y: 150, h: 100, w: 10 };
+        scoreLeft = 0;
+        scoreRight = 0;
+        gameOver = false;
+      }
+
+      p.setup = () => {
+        p.createCanvas(400, 400);
+      };
+
+      p.draw = () => {
+        p.background(20, 20, 40);
+        if (!gameOver) {
+          ball.x += ball.dx;
+          ball.y += ball.dy;
+          if (ball.y < 0 || ball.y > p.height) {
+            ball.dy *= -1;
+          }
+          if (ball.x < 20 && ball.y > paddleLeft.y && ball.y < paddleLeft.y + paddleLeft.h) {
+            ball.dx *= -1;
+          } else if (ball.x > p.width - 20 && ball.y > paddleRight.y && ball.y < paddleRight.y + paddleRight.h) {
+            ball.dx *= -1;
+          }
+          if (ball.x < 0) {
+            scoreRight++;
+            resetBall();
+          } else if (ball.x > p.width) {
+            scoreLeft++;
+            resetBall();
+          }
+          paddleRight.y = ball.y - paddleRight.h / 2;
+          paddleRight.y = p.constrain(paddleRight.y, 0, p.height - paddleRight.h);
+          if (scoreLeft >= 5 || scoreRight >= 5) {
+            gameOver = true;
+          }
+        }
+        p.fill(255);
+        p.rect(10, paddleLeft.y, paddleLeft.w, paddleLeft.h, 5);
+        p.rect(p.width - 20, paddleRight.y, paddleRight.w, paddleRight.h, 5);
+        p.fill(236, 72, 153);
+        p.ellipse(ball.x, ball.y, 12);
+        p.fill(255);
+        p.textSize(20);
+        p.textFont('Arial');
+        p.textAlign(p.LEFT);
+        p.text(scoreLeft, 50, 30);
+        p.textAlign(p.RIGHT);
+        p.text(scoreRight, p.width - 50, 30);
+        if (gameOver) {
+          p.textSize(40);
+          p.textAlign(p.CENTER);
+          p.text('Game Over\nPress R to Restart', p.width / 2, p.height / 2);
+        }
+      };
+
+      function resetBall() {
+        ball.x = p.width / 2;
+        ball.y = p.height / 2;
+        ball.dx = 4 * (Math.random() > 0.5 ? 1 : -1);
+        ball.dy = 4 * (Math.random() > 0.5 ? 1 : -1);
+      }
+
+      p.keyPressed = () => {
+        if (gameOver && p.key === 'r') {
+          resetGame();
+        } else if (!gameOver) {
+          if (p.keyCode === p.UP_ARROW) {
+            paddleLeft.y -= 20;
+          } else if (p.keyCode === p.DOWN_ARROW) {
+            paddleLeft.y += 20;
+          }
+          paddleLeft.y = p.constrain(paddleLeft.y, 0, p.height - paddleLeft.h);
+        }
+      };
+    };
+
+    // Breakout Game
+    const sketchBreakout = (p) => {
+      let paddle = { x: 200, y: 380, w: 80, h: 10 };
+      let ball = { x: 200, y: 200, dx: 4, dy: -4, r: 6 };
+      let bricks = [];
+      let score = 0;
+      let gameOver = false;
+
+      function resetGame() {
+        paddle = { x: 200, y: 380, w: 80, h: 10 };
+        ball = { x: 200, y: 200, dx: 4, dy: -4, r: 6 };
+        bricks = [];
+        score = 0;
+        gameOver = false;
+        for (let i = 0; i < 5; i++) {
+          for (let j = 0; j < 8; j++) {
+            bricks.push({ x: j * 50 + 10, y: i * 20 + 30, w: 40, h: 10 });
+          }
+        }
+      }
+
+      p.setup = () => {
+        p.createCanvas(400, 400);
+        resetGame();
+      };
+
+      p.draw = () => {
+        p.background(20, 20, 40);
+        if (!gameOver) {
+          ball.x += ball.dx;
+          ball.y += ball.dy;
+          if (ball.x < ball.r || ball.x > p.width - ball.r) {
+            ball.dx *= -1;
+          }
+          if (ball.y < ball.r) {
+            ball.dy *= -1;
+          }
+          if (ball.y > paddle.y - ball.r && ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
+            ball.dy *= -1;
+          }
+          bricks = bricks.filter(brick => {
+            if (ball.x > brick.x && ball.x < brick.x + brick.w && ball.y > brick.y && ball.y < brick.y + brick.h) {
+              ball.dy *= -1;
+              score += 10;
+              return false;
+            }
+            return true;
+          });
+          if (ball.y > p.height) {
+            gameOver = true;
+          }
+          if (bricks.length === 0) {
+            gameOver = true;
+          }
+        }
+        p.fill(59, 130, 246);
+        p.rect(paddle.x, paddle.y, paddle.w, paddle.h, 5);
+        p.fill(236, 72, 153);
+        p.ellipse(ball.x, ball.y, ball.r * 2);
+        p.fill(234, 179, 8);
+        bricks.forEach(brick => {
+          p.rect(brick.x, brick.y, brick.w, brick.h, 3);
+        });
+        p.fill(255);
+        p.textSize(20);
+        p.textFont('Arial');
+        p.text(`Score: ${score}`, 10, 20);
+        if (gameOver) {
+          p.textSize(40);
+          p.textAlign(p.CENTER);
+          p.text(bricks.length === 0 ? 'You Win!\nPress R to Restart' : 'Game Over\nPress R to Restart', p.width / 2, p.height / 2);
+        }
+      };
+
+      p.keyPressed = () => {
+        if (gameOver && p.key === 'r') {
+          resetGame();
+        } else if (!gameOver) {
+          if (p.keyCode === p.LEFT_ARROW) {
+            paddle.x -= 20;
+          } else if (p.keyCode === p.RIGHT_ARROW) {
+            paddle.x += 20;
+          }
+          paddle.x = p.constrain(paddle.x, 0, p.width - paddle.w);
+        }
+      };
+    };
+
+    // Tic-Tac-Toe Game
+    const sketchTicTacToe = (p) => {
+      let board = Array(3).fill().map(() => Array(3).fill(''));
+      let currentPlayer = 'X';
+      let gameOver = false;
+      let winner = null;
+      let cellSize = 100;
+
+      function resetGame() {
+        board = Array(3).fill().map(() => Array(3).fill(''));
+        currentPlayer = 'X';
+        gameOver = false;
+        winner = null;
+      }
+
+      p.setup = () => {
+        p.createCanvas(300, 300);
+      };
+
+      p.draw = () => {
+        p.background(20, 20, 40);
+        p.stroke(255);
+        p.strokeWeight(4);
+        p.line(100, 0, 100, 300);
+        p.line(200, 0, 200, 300);
+        p.line(0, 100, 300, 100);
+        p.line(0, 200, 300, 200);
+        p.textSize(60);
+        p.textAlign(p.CENTER, p.CENTER);
+        for (let i = 0; i < 3; i++) {
+          for (let j = 0; j < 3; j++) {
+            if (board[i][j]) {
+              p.fill(board[i][j] === 'X' ? 'red' : 'blue');
+              p.text(board[i][j], j * cellSize + cellSize / 2, i * cellSize + cellSize / 2);
+            }
+          }
+        }
+        if (gameOver) {
+          p.fill(255);
+          p.textSize(40);
+          p.textAlign(p.CENTER);
+          p.text(winner ? `${winner} Wins!\nPress R to Restart` : 'Draw!\nPress R to Restart', p.width / 2, p.height / 2);
+        }
+      };
+
+      p.mousePressed = () => {
+        if (!gameOver && currentPlayer === 'X') {
+          let i = Math.floor(p.mouseY / cellSize);
+          let j = Math.floor(p.mouseX / cellSize);
+          if (i >= 0 && i < 3 && j >= 0 && j < 3 && board[i][j] === '') {
+            board[i][j] = 'X';
+            checkGameState();
+            if (!gameOver) {
+              aiMove();
+              checkGameState();
+            }
+          }
+        }
+      };
+
+      function aiMove() {
+        let emptyCells = [];
+        for (let i = 0; i < 3; i++) {
+          for (let j = 0; j < 3; j++) {
+            if (board[i][j] === '') {
+              emptyCells.push({ i, j });
+            }
+          }
+        }
+        if (emptyCells.length > 0) {
+          let move = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+          board[move.i][move.j] = 'O';
+        }
+      }
+
+      function checkGameState() {
+        for (let i = 0; i < 3; i++) {
+          if (board[i][0] && board[i][0] === board[i][1] && board[i][1] === board[i][2]) {
+            winner = board[i][0];
+            gameOver = true;
+            return;
+          }
+          if (board[0][i] && board[0][i] === board[1][i] && board[1][i] === board[2][i]) {
+            winner = board[0][i];
+            gameOver = true;
+            return;
+          }
+        }
+        if (board[0][0] && board[0][0] === board[1][1] && board[1][1] === board[2][2]) {
+          winner = board[0][0];
+          gameOver = true;
+          return;
+        }
+        if (board[0][2] && board[0][2] === board[1][1] && board[1][1] === board[2][0]) {
+          winner = board[0][2];
+          gameOver = true;
+          return;
+        }
+        if (board.every(row => row.every(cell => cell !== ''))) {
+          gameOver = true;
+        }
+      }
+
+      p.keyPressed = () => {
+        if (gameOver && p.key === 'r') {
+          resetGame();
+        }
+      };
+    };
+
+    // Pac-Man Game
+    const sketchPacMan = (p) => {
+      let player = { x: 1, y: 1, dx: 0, dy: 0 };
+      let ghosts = [
+        { x: 8, y: 8, dx: 1, dy: 0 },
+        { x: 8, y: 9, dx: -1, dy: 0 }
+      ];
+      let dots = [];
+      let score = 0;
+      let gameOver = false;
+      const gridSize = 10;
+      const tileSize = 40;
+      const maze = [
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,1],
+        [1,0,1,1,0,1,1,0,0,1],
+        [1,0,1,0,0,0,1,0,0,1],
+        [1,0,1,0,1,0,1,0,0,1],
+        [1,0,0,0,1,0,0,0,0,1],
+        [1,0,1,0,1,0,1,1,0,1],
+        [1,0,1,0,0,0,0,1,0,1],
+        [1,0,0,0,1,1,0,0,0,1],
+        [1,1,1,1,1,1,1,1,1,1]
+      ];
+
+      function resetGame() {
+        player = { x: 1, y: 1, dx: 0, dy: 0 };
+        ghosts = [
+          { x: 8, y: 8, dx: 1, dy: 0 },
+          { x: 8, y: 9, dx: -1, dy: 0 }
+        ];
+        dots = [];
+        score = 0;
+        gameOver = false;
+        for (let y = 0; y < gridSize; y++) {
+          for (let x = 0; x < gridSize; x++) {
+            if (maze[y][x] === 0 && !(x === 1 && y === 1)) {
+              dots.push({ x, y });
+            }
+          }
+        }
+      }
+
+      p.setup = () => {
+        p.createCanvas(gridSize * tileSize, gridSize * tileSize);
+        resetGame();
+        p.frameRate(10);
+      };
+
+      p.draw = () => {
+        p.background(20, 20, 40);
+        if (!gameOver) {
+          let newX = player.x + player.dx;
+          let newY = player.y + player.dy;
+          if (newX >= 0 && newX < gridSize && newY >= 0 && newY < gridSize && maze[newY][newX] === 0) {
+            player.x = newX;
+            player.y = newY;
+          }
+          ghosts.forEach(ghost => {
+            if (Math.random() < 0.5) {
+              ghost.dx = Math.sign(player.x - ghost.x);
+              ghost.dy = 0;
+            } else {
+              ghost.dx = 0;
+              ghost.dy = Math.sign(player.y - ghost.y);
+            }
+            let gx = ghost.x + ghost.dx;
+            let gy = ghost.y + ghost.dy;
+            if (gx >= 0 && gx < gridSize && gy >= 0 && gy < gridSize && maze[gy][gx] === 0) {
+              ghost.x = gx;
+              ghost.y = gy;
+            }
+            if (ghost.x === player.x && ghost.y === player.y) {
+              gameOver = true;
+            }
+          });
+          dots = dots.filter(dot => {
+            if (dot.x === player.x && dot.y === player.y) {
+              score += 10;
+              return false;
+            }
+            return true;
+          });
+          if (dots.length === 0) {
+            gameOver = true;
+          }
+        }
+        p.fill(37, 99, 235);
+        for (let y = 0; y < gridSize; y++) {
+          for (let x = 0; x < gridSize; x++) {
+            if (maze[y][x] === 1) {
+              p.rect(x * tileSize, y * tileSize, tileSize, tileSize, 5);
+            }
+          }
+        }
+        p.fill(234, 179, 8);
+        dots.forEach(dot => {
+          p.ellipse(dot.x * tileSize + tileSize / 2, dot.y * tileSize + tileSize / 2, 10);
+        });
+        p.fill(234, 179, 8);
+        p.ellipse(player.x * tileSize + tileSize / 2, player.y * tileSize + tileSize / 2, tileSize - 5);
+        p.fill(236, 72, 153);
+        ghosts.forEach(ghost => {
+          p.ellipse(ghost.x * tileSize + tileSize / 2, ghost.y * tileSize + tileSize / 2, tileSize - 5);
+        });
+        p.fill(255);
+        p.textSize(20);
+        p.textFont('Arial');
+        p.text(`Score: ${score}`, 10, 20);
+        if (gameOver) {
+          p.textSize(40);
+          p.textAlign(p.CENTER);
+          p.text(dots.length === 0 ? 'You Win!\nPress R to Restart' : 'Game Over\nPress R to Restart', p.width / 2, p.height / 2);
+        }
+      };
+
+      p.keyPressed = () => {
+        if (gameOver && p.key === 'r') {
+          resetGame();
+        } else if (!gameOver) {
+          if (p.keyCode === p.UP_ARROW) {
+            player.dx = 0;
+            player.dy = -1;
+          } else if (p.keyCode === p.DOWN_ARROW) {
+            player.dx = 0;
+            player.dy = 1;
+          } else if (p.keyCode === p.LEFT_ARROW) {
+            player.dx = -1;
+            player.dy = 0;
+          } else if (p.keyCode === p.RIGHT_ARROW) {
+            player.dx = 1;
+            player.dy = 0;
+          }
+        }
+      };
+    };
+
+    // Space Invaders Game
+    const sketchSpaceInvaders = (p) => {
+      let player = { x: 200, y: 380, w: 30, h: 20 };
+      let bullets = [];
+      let aliens = [];
+      let score = 0;
+      let gameOver = false;
+      const alienRows = 3;
+      const alienCols = 8;
+      let alienDx = 2;
+
+      function resetGame() {
+        player = { x: 200, y: 380, w: 30, h: 20 };
+        bullets = [];
+        aliens = [];
+        score = 0;
+        gameOver = false;
+        for (let i = 0; i < alienRows; i++) {
+          for (let j = 0; j < alienCols; j++) {
+            aliens.push({ x: j * 40 + 40, y: i * 30 + 30, w: 20, h: 20 });
+          }
+        }
+      }
+
+      p.setup = () => {
+        p.createCanvas(400, 400);
+        resetGame();
+        p.frameRate(30);
+      };
+
+      p.draw = () => {
+        p.background(20, 20, 40);
+        if (!gameOver) {
+          if (p.keyIsDown(p.LEFT_ARROW)) player.x -= 5;
+          if (p.keyIsDown(p.RIGHT_ARROW)) player.x += 5;
+          player.x = p.constrain(player.x, 0, p.width - player.w);
+          let edge = false;
+          aliens.forEach(alien => {
+            alien.x += alienDx;
+            if (alien.x < 0 || alien.x > p.width - alien.w) edge = true;
+            if (alien.y > p.height - 50) gameOver = true;
+          });
+          if (edge) {
+            alienDx *= -1;
+            aliens.forEach(alien => (alien.y += 20));
+          }
+          bullets = bullets.filter(bullet => {
+            bullet.y -= 5;
+            if (bullet.y < 0) return false;
+            aliens = aliens.filter(alien => {
+              if (
+                bullet.x > alien.x &&
+                bullet.x < alien.x + alien.w &&
+                bullet.y > alien.y &&
+                bullet.y < alien.y + alien.h
+              ) {
+                score += 10;
+                return false;
+              }
+              return true;
+            });
+            return true;
+          });
+          if (aliens.length === 0) gameOver = true;
+        }
+        p.fill(34, 197, 94);
+        p.rect(player.x, player.y, player.w, player.h, 5);
+        p.fill(239, 68, 68);
+        aliens.forEach(alien => {
+          p.rect(alien.x, alien.y, alien.w, alien.h, 3);
+        });
+        p.fill(255);
+        bullets.forEach(bullet => {
+          p.rect(bullet.x, bullet.y, 5, 10, 2);
+        });
+        p.fill(255);
+        p.textSize(20);
+        p.textFont('Arial');
+        p.text(`Score: ${score}`, 10, 20);
+        if (gameOver) {
+          p.textSize(40);
+          p.textAlign(p.CENTER);
+          p.text(aliens.length === 0 ? 'You Win!\nPress R to Restart' : 'Game Over\nPress R to Restart', p.width / 2, p.height / 2);
+        }
+      };
+
+      p.keyPressed = () => {
+        if (gameOver && p.key === 'r') {
+          resetGame();
+        } else if (!gameOver && p.keyCode === 32) {
+          bullets.push({ x: player.x + player.w / 2, y: player.y });
+        }
+      };
+    };
+
+    // Asteroids Game
+    const sketchAsteroids = (p) => {
+      let ship = { x: 200, y: 200, angle: 0, dx: 0, dy: 0 };
+      let bullets = [];
+      let asteroids = [];
+      let score = 0;
+      let gameOver = false;
+
+      function resetGame() {
+        ship = { x: 200, y: 200, angle: 0, dx: 0, dy: 0 };
+        bullets = [];
+        asteroids = [];
+        score = 0;
+        gameOver = false;
+        for (let i = 0; i < 5; i++) {
+          asteroids.push({
+            x: Math.random() * p.width,
+            y: Math.random() * p.height,
+            r: 20,
+            dx: (Math.random() - 0.5) * 4,
+            dy: (Math.random() - 0.5) * 4
+          });
+        }
+      }
+
+      p.setup = () => {
+        p.createCanvas(400, 400);
+        resetGame();
+        p.frameRate(30);
+      };
+
+      p.draw = () => {
+        p.background(20, 20, 40);
+        if (!gameOver) {
+          if (p.keyIsDown(p.UP_ARROW)) {
+            ship.dx += Math.cos(ship.angle) * 0.1;
+            ship.dy += Math.sin(ship.angle) * 0.1;
+          }
+          if (p.keyIsDown(p.LEFT_ARROW)) ship.angle -= 0.1;
+          if (p.keyIsDown(p.RIGHT_ARROW)) ship.angle += 0.1;
+          ship.x += ship.dx;
+          ship.y += ship.dy;
+          if (ship.x < 0) ship.x += p.width;
+          if (ship.x > p.width) ship.x -= p.width;
+          if (ship.y < 0) ship.y += p.height;
+          if (ship.y > p.height) ship.y -= p.height;
+          asteroids.forEach(asteroid => {
+            asteroid.x += asteroid.dx;
+            asteroid.y += asteroid.dy;
+            if (asteroid.x < 0) asteroid.x += p.width;
+            if (asteroid.x > p.width) asteroid.x -= p.width;
+            if (asteroid.y < 0) asteroid.y += p.height;
+            if (asteroid.y > p.height) asteroid.y -= p.height;
+            let d = p.dist(ship.x, ship.y, asteroid.x, asteroid.y);
+            if (d < asteroid.r + 10) gameOver = true;
+          });
+          bullets = bullets.filter(bullet => {
+            bullet.x += bullet.dx;
+            bullet.y += bullet.dy;
+            if (bullet.x < 0 || bullet.x > p.width || bullet.y < 0 || bullet.y > p.height) return false;
+            asteroids = asteroids.filter(asteroid => {
+              let d = p.dist(bullet.x, bullet.y, asteroid.x, asteroid.y);
+              if (d < asteroid.r) {
+                score += 10;
+                return false;
+              }
+              return true;
+            });
+            return true;
+          });
+          if (asteroids.length === 0) gameOver = true;
+        }
+        p.push();
+        p.translate(ship.x, ship.y);
+        p.rotate(ship.angle);
+        p.fill(34, 197, 94);
+        p.triangle(0, -12, -10, 12, 10, 12);
+        p.pop();
+        p.fill(156, 163, 175);
+        asteroids.forEach(asteroid => {
+          p.ellipse(asteroid.x, asteroid.y, asteroid.r * 2);
+        });
+        p.fill(255);
+        bullets.forEach(bullet => {
+          p.ellipse(bullet.x, bullet.y, 5);
+        });
+        p.fill(255);
+        p.textSize(20);
+        p.textFont('Arial');
+        p.text(`Score: ${score}`, 10, 20);
+        if (gameOver) {
+          p.textSize(40);
+          p.textAlign(p.CENTER);
+          p.text(asteroids.length === 0 ? 'You Win!\nPress R to Restart' : 'Game Over\nPress R to Restart', p.width / 2, p.height / 2);
+        }
+      };
+
+      p.keyPressed = () => {
+        if (gameOver && p.key === 'r') {
+          resetGame();
+        } else if (!gameOver && p.keyCode === 32) {
+          bullets.push({
+            x: ship.x,
+            y: ship.y,
+            dx: Math.cos(ship.angle) * 5,
+            dy: Math.sin(ship.angle) * 5
+          });
+        }
+      };
+    };
+
+    // Galaga Game
+    const sketchGalaga = (p) => {
+      let player = { x: 200, y: 380, w: 30, h: 20 };
+      let bullets = [];
+      let enemies = [];
+      let score = 0;
+      let gameOver = false;
+      const enemyRows = 3;
+      const enemyCols = 8;
+
+      function resetGame() {
+        player = { x: 200, y: 380, w: 30, h: 20 };
+        bullets = [];
+        enemies = [];
+        score = 0;
+        gameOver = false;
+        for (let i = 0; i < enemyRows; i++) {
+          for (let j = 0; j < enemyCols; j++) {
+            enemies.push({ x: j * 40 + 40, y: i * 30 + 30, w: 20, h: 20 });
+          }
+        }
+      }
+
+      p.setup = () => {
+        p.createCanvas(400, 400);
+        resetGame();
+        p.frameRate(30);
+      };
+
+      p.draw = () => {
+        p.background(20, 20, 40);
+        if (!gameOver) {
+          if (p.keyIsDown(p.LEFT_ARROW)) player.x -= 5;
+          if (p.keyIsDown(p.RIGHT_ARROW)) player.x += 5;
+          player.x = p.constrain(player.x, 0, p.width - player.w);
+          enemies.forEach(enemy => {
+            enemy.x += Math.sin(p.frameCount * 0.05) * 2;
+            if (enemy.y > p.height - 50) gameOver = true;
+          });
+          bullets = bullets.filter(bullet => {
+            bullet.y -= 5;
+            if (bullet.y < 0) return false;
+            enemies = enemies.filter(enemy => {
+              if (
+                bullet.x > enemy.x &&
+                bullet.x < enemy.x + enemy.w &&
+                bullet.y > enemy.y &&
+                bullet.y < enemy.y + enemy.h
+              ) {
+                score += 10;
+                return false;
+              }
+              return true;
+            });
+            return true;
+          });
+          if (enemies.length === 0) gameOver = true;
+        }
+        p.fill(34, 197, 94);
+        p.rect(player.x, player.y, player.w, player.h, 5);
+        p.fill(168, 85, 247);
+        enemies.forEach(enemy => {
+          p.rect(enemy.x, enemy.y, enemy.w, enemy.h, 3);
+        });
+        p.fill(255);
+        bullets.forEach(bullet => {
+          p.rect(bullet.x, bullet.y, 5, 10, 2);
+        });
+        p.fill(255);
+        p.textSize(20);
+        p.textFont('Arial');
+        p.text(`Score: ${score}`, 10, 20);
+        if (gameOver) {
+          p.textSize(40);
+          p.textAlign(p.CENTER);
+          p.text(enemies.length === 0 ? 'You Win!\nPress R to Restart' : 'Game Over\nPress R to Restart', p.width / 2, p.height / 2);
+        }
+      };
+
+      p.keyPressed = () => {
+        if (gameOver && p.key === 'r') {
+          resetGame();
+        } else if (!gameOver && p.keyCode === 32) {
+          bullets.push({ x: player.x + player.w / 2, y: player.y });
+        }
+      };
+    };
+
+    // Placeholder for unimplemented games
+    const sketchPlaceholder = (p) => {
+      p.setup = () => {
+        p.createCanvas(400, 400);
+      };
+      p.draw = () => {
+        p.background(20, 20, 40);
+        p.fill(255);
+        p.textSize(20);
+        p.textAlign(p.CENTER);
+        p.textFont('Arial');
+        p.text('Game not yet implemented', p.width / 2, p.height / 2);
+      };
+    };
+  </script>
+</body>
+</html>
